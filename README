@@ -1,0 +1,27 @@
+I have speakers all over my house.
+
+I like to minimize my power usage.
+
+Sonos has no API.
+
+This is a daemon that "listens" to the audio coming out of Sonos
+(forked into my home server's line-in) and turns on & off my Denon
+amps as needed.
+
+Now when I come home & pull out my phone and pick some Pandora
+station, the whole house turns on and parties with me.
+
+And it means I never have to worry about turning off amps and wasting
+my solar power. (hmm, waste solar power? maybe this project is
+pointless.)
+
+Pics:
+
+    https://picasaweb.google.com/115863474911002159675/Sonden
+
+This software is unsupported.
+
+
+
+
+
