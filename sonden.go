@@ -29,6 +29,7 @@ import (
 var (
 	ampAddrs = flag.String("amps", "", "Comma-separated list of ip:port of Denon amps")
 	idleSec  = flag.Int("idlesec", 300, "number of seconds of silence before turning off amps")
+	alsaDev  = flag.String("alsadev", "", "If non-empty, arecord(1) is used instead of rec(1) with this ALSA device name. e.g. plughw:CARD=Audio,DEV=0 (see arecord -L)")
 )
 
 const (
@@ -99,6 +100,12 @@ func main() {
 		"-b", "16", // 16 bits per sample
 		"-c", "1", // one channel
 		"-")
+	if *alsaDev != "" {
+		cmd = exec.Command("arecord",
+			"-D", *alsaDev,
+			"-f", "S16_LE",
+			"-t", "raw")
+	}
 	out, _ := cmd.StdoutPipe()
 	err := cmd.Start()
 	if err != nil {
@@ -127,7 +134,7 @@ func main() {
 		var sample int16
 		err := binary.Read(out, binary.LittleEndian, &sample)
 		if err != nil {
-			log.Fatalf("error reading next sample: %v")
+			log.Fatalf("error reading next sample: %v", err)
 		}
 		ring.Add(sample)
 		if ring.i != 0 {
