@@ -92,10 +92,10 @@ func setAmpState(amp *avr.Amp, state bool) {
 		cmds = []string{"ZMON", "PWON"}
 	}
 	for _, cmd := range cmds {
-		log.Printf("Sending command %q", cmd)
+		log.Printf("Sending command to %s: %q", amp.Addr(), cmd)
 		err := amp.SendCommand(cmd)
 		if err != nil {
-			log.Printf("Sending command %q failed: %v", cmd, err)
+			log.Printf("Sending command %q to %s failed: %v", cmd, amp.Addr(), err)
 			return
 		}
 	}
@@ -179,6 +179,8 @@ func main() {
 			setAmps(true)
 		} else if time.Since(lastPlaying) > *idle {
 			setAmps(false)
+		} else {
+			log.Printf("turning amps off in %v", *idle - time.Since(lastPlaying))
 		}
 	}
 }
