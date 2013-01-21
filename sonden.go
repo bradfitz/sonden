@@ -20,6 +20,7 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"code.google.com/p/go-avr/avr"
@@ -28,7 +29,7 @@ import (
 // Flags
 var (
 	ampAddrs = flag.String("amps", "", "Comma-separated list of ip:port of Denon amps")
-	idleSec  = flag.Int("idlesec", 300, "number of seconds of silence before turning off amps")
+	idle     = flag.Duration("idle", 5*time.Minute, "length of silence before turning off amps")
 	alsaDev  = flag.String("alsadev", "", "If non-empty, arecord(1) is used instead of rec(1) with this ALSA device name. e.g. plughw:CARD=Audio,DEV=0 (see arecord -L)")
 )
 
@@ -69,7 +70,23 @@ func (r *sampleRing) Variance() float64 {
 	return v
 }
 
+var (
+	mu       sync.Mutex
+	ampState = make(map[*avr.Amp]bool)
+)
+
+func getAmpState(amp *avr.Amp) (on bool, ok bool) {
+	mu.Lock()
+	defer mu.Unlock()
+	on, ok = ampState[amp]
+	return
+}
+
 func setAmpState(amp *avr.Amp, state bool) {
+	if cur, ok := getAmpState(amp); ok && cur == state {
+		return
+	}
+
 	cmds := []string{"ZMOFF", "PWSTANDBY"}
 	if state {
 		cmds = []string{"ZMON", "PWON"}
@@ -78,10 +95,15 @@ func setAmpState(amp *avr.Amp, state bool) {
 		log.Printf("Sending command %q", cmd)
 		err := amp.SendCommand(cmd)
 		if err != nil {
-			log.Printf("Sendind command %q failed: %v", cmd, err)
+			log.Printf("Sending command %q failed: %v", cmd, err)
 			return
 		}
 	}
+
+	log.Printf("Amp %s successfully set to state %v", amp.Addr(), state)
+	mu.Lock()
+	defer mu.Unlock()
+	ampState[amp] = state
 }
 
 func main() {
@@ -114,17 +136,26 @@ func main() {
 
 	var (
 		ring        sampleRing
-		ampsOn      bool
 		lastPlaying time.Time
 	)
 
 	setAmps := func(state bool) {
+		allGood := true
+		for _, amp := range amps {
+			if cur, known := getAmpState(amp); !known || cur != state {
+				allGood = false
+				break
+			}
+		}
+		if allGood {
+			// All amps in the correct state; no need to log spam.
+			return
+		}
 		if state {
 			log.Printf("turning amps ON")
 		} else {
 			log.Printf("turning amps OFF")
 		}
-		ampsOn = state
 		for _, amp := range amps {
 			go setAmpState(amp, state)
 		}
@@ -142,18 +173,12 @@ func main() {
 		}
 		v := ring.Variance()
 		audioPlaying := v > quietVarianceThreshold
-
 		log.Printf("variance = %v; playing = %v", v, audioPlaying)
 		if audioPlaying {
 			lastPlaying = time.Now()
-			if !ampsOn {
-				setAmps(true)
-			}
-		} else if ampsOn {
-			quietTime := time.Now().Sub(lastPlaying)
-			if quietTime > time.Duration(*idleSec)*time.Second {
-				setAmps(false)
-			}
+			setAmps(true)
+		} else if time.Since(lastPlaying) > *idle {
+			setAmps(false)
 		}
 	}
 }
