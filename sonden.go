@@ -28,15 +28,17 @@ import (
 
 // Flags
 var (
-	ampAddrs = flag.String("amps", "", "Comma-separated list of ip:port of Denon amps")
-	idle     = flag.Duration("idle", 5*time.Minute, "length of silence before turning off amps")
-	alsaDev  = flag.String("alsadev", "", "If non-empty, arecord(1) is used instead of rec(1) with this ALSA device name. e.g. plughw:CARD=Audio,DEV=0 (see arecord -L)")
+	ampAddrs  = flag.String("amps", "", "Comma-separated list of ip:port of Denon amps")
+	idle      = flag.Duration("idle", 5*time.Minute, "length of silence before turning off amps")
+	alsaDev   = flag.String("alsadev", "", "If non-empty, arecord(1) is used instead of rec(1) with this ALSA device name. e.g. plughw:CARD=Audio,DEV=0 (see arecord -L)")
+	threshold = flag.Float64("threshold", 0, "optional sound cut-off threshold to use")
 )
 
 const (
-	quietVarianceThreshold = 1000 // typically ~2. occasionally as high as 16.
-	sampleHz               = 8 << 10
-	ringSize               = sampleHz // 2 seconds of audio
+	quietVarianceThreshold     = 1000 // typically ~2. occasionally as high as 16.
+	alsaQuietVarianceThreshold = 2000 // why different than previous line? dunno. wrong sample params?
+	sampleHz                   = 8 << 10
+	ringSize                   = sampleHz // 2 seconds of audio
 )
 
 type sampleRing struct {
@@ -128,6 +130,13 @@ func main() {
 			"-f", "S16_LE",
 			"-t", "raw")
 	}
+	if *threshold == 0 {
+		if *alsaDev != "" {
+			*threshold = alsaQuietVarianceThreshold
+		} else {
+			*threshold = quietVarianceThreshold
+		}
+	}
 	out, _ := cmd.StdoutPipe()
 	err := cmd.Start()
 	if err != nil {
@@ -172,7 +181,7 @@ func main() {
 			continue
 		}
 		v := ring.Variance()
-		audioPlaying := v > quietVarianceThreshold
+		audioPlaying := v > *threshold
 		log.Printf("variance = %v; playing = %v", v, audioPlaying)
 		if audioPlaying {
 			lastPlaying = time.Now()
@@ -180,7 +189,7 @@ func main() {
 		} else if time.Since(lastPlaying) > *idle {
 			setAmps(false)
 		} else {
-			log.Printf("turning amps off in %v", *idle - time.Since(lastPlaying))
+			log.Printf("turning amps off in %v", *idle-time.Since(lastPlaying))
 		}
 	}
 }
